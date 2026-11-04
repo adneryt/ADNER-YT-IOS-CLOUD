@@ -19,8 +19,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if gh release view adner-holo-prueba-02 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "El Release ya existe; se conserva sin reemplazar archivos."
-          else
-            gh release create adner-holo-prueba-02 RECURSOS_PRUEBA/holo-prueba-02/* --repo "$GITHUB_REPOSITORY" --title 'Holograma ADNER YT - Prueba 02 Optional' --notes 'Archivos de prueba para la copia de trabajo de ADNER. No concede acceso a carpetas privadas del juego.' --prerelease
+          tag=adner-holo-prueba-02
+          retry() { for attempt in 1 2 3; do if "$@"; then return 0; fi; sleep 3; done; return 1; }
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            retry gh release create "$tag" --repo "$GITHUB_REPOSITORY" --title 'Holograma ADNER YT - Prueba 02 Optional' --notes 'Recursos de prueba para la copia de trabajo de ADNER.' --prerelease --draft || gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null
           fi
+          retry gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' > /tmp/adner-assets.txt
+          for asset in RECURSOS_PRUEBA/holo-prueba-02/*; do
+            if ! grep -Fxq "$(basename "$asset")" /tmp/adner-assets.txt; then
+              retry gh release upload "$tag" "$asset" --repo "$GITHUB_REPOSITORY"
+            fi
+          done
+          retry gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease
