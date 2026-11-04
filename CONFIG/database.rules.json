@@ -1,0 +1,27 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "ADNER_IOS_CLOUD": {
+      "catalog": {
+        ".read": "auth != null && auth.uid === 'OxWCNpO2vRQT0ejIRPFmjU5Ygit2'",
+        ".write": "auth != null && auth.uid === 'OxWCNpO2vRQT0ejIRPFmjU5Ygit2'"
+      },
+      "routes": {
+        ".read": "auth != null && auth.uid === 'OxWCNpO2vRQT0ejIRPFmjU5Ygit2'",
+        ".write": "auth != null && auth.uid === 'OxWCNpO2vRQT0ejIRPFmjU5Ygit2'"
+      },
+      "history": {
+        ".read": "auth != null && auth.uid === 'OxWCNpO2vRQT0ejIRPFmjU5Ygit2'",
+        ".write": "auth != null && auth.uid === 'OxWCNpO2vRQT0ejIRPFmjU5Ygit2'"
+      },
+      "public": {
+        "production": {
+          ".read": true,
+          ".write": "auth != null && auth.uid === 'OxWCNpO2vRQT0ejIRPFmjU5Ygit2'",
+          ".validate": "newData.hasChildren(['payload','version','status','updatedAt','itemCount']) && newData.child('payload').isString() && newData.child('payload').val().length <= 900000 && newData.child('version').isString() && newData.child('version').val().length <= 40 && (newData.child('status').val() === 'active' || newData.child('status').val() === 'maintenance') && newData.child('itemCount').isNumber() && newData.child('itemCount').val() <= 50"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,1 @@
+Panel HTML para alojar en GitHub Pages. Completa firebase-config.js primero. El HTML único es una vista alternativa; el despliegue oficial usa WEB-ADMIN/ para facilitar mantenimiento.
