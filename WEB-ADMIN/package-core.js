@@ -1,7 +1,7 @@
 (function(root){'use strict';
 const maxFile=30*1024*1024,maxTotal=60*1024*1024;
 function assert(ok,text){if(!ok)throw Error(text)}
-function safePath(p){return typeof p==='string'&&p.length<=220&&/^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/.test(p)&&p.split('/').every(x=>x!=='.'&&x!=='..'&&!x.startsWith('.'))}
+function safePath(p){return typeof p==='string'&&p.length<=220&&/^[A-Za-z0-9_.~-]+(?:\/[A-Za-z0-9_.~-]+)*$/.test(p)&&p.split('/').every(x=>x!=='.'&&x!=='..'&&!x.startsWith('.'))}
 function validate(p,remote=false){
  assert(p&&p.schemaVersion===1,'Versión de paquete no admitida');assert(/^[A-Za-z0-9_-]{1,70}$/.test(p.id),'ID de paquete inválido');assert(p.name===undefined||(typeof p.name==='string'&&p.name.length<=80),'Nombre de paquete demasiado largo');
  assert(['avatar','hologram','bypass'].includes(p.kind),'Tipo de paquete inválido');assert(['com.dts.freefiremax','com.dts.freefireth'].includes(p.game),'Juego no admitido en esta versión');
