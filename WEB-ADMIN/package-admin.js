@@ -2,6 +2,33 @@ const P=window.ADNERPackages,$=id=>document.getElementById(id),api=()=>window.AD
 const panel=document.createElement('article');panel.className='panel';panel.id='package-admin';
 panel.innerHTML=`<h3>Paquetes HEAD · Holo · Baypas</h3><p class="muted">Archivos gestionados desde este administrador → GitHub Releases → catálogo Firebase → copia de trabajo de ADNER.</p><label class="block-label">ZIP del paquete<input id="package-zip" type="file" accept=".zip,application/zip"></label><p class="hint">Cada holograma necesita su fileinfo propio y una shader adicional con nombre distinto de la original. El ZIP debe contener adner-package.json.</p><div class="fields"><label>Repositorio público de recursos<input id="package-repo" placeholder="usuario/adner-recursos" autocomplete="off"></label><label>Token GitHub de esta operación<input id="package-token" type="password" autocomplete="off" placeholder="Permiso Contents: read and write"></label></div><p class="hint">Usa un repositorio público de recursos: la IPA descarga sin iniciar sesión en GitHub. El token solo se usa durante esta operación; no se guarda en Firebase, el manifiesto ni localStorage. Cada subida crea un Release público nuevo.</p><pre id="package-check" class="codeview">Selecciona un ZIP para validar parejas, rutas y hashes.</pre><div class="actions"><button id="package-validate" type="button">Validar ZIP</button><button id="package-upload" type="button" class="primary" disabled>Subir a GitHub y guardar catálogo</button></div><p id="package-message" class="hint" role="status"></p>`;
 $('view-catalog').prepend(panel);let prepared=null;
+const importBox=document.createElement('div');importBox.className='panel';importBox.innerHTML=`<h3>Importar archivos ya publicados</h3><p class="hint">Si la subida directa muestra Failed to fetch, publica los archivos en GitHub Releases y vincúlalos aquí. Selecciona y valida arriba el mismo ZIP. Esta opción lee el Release y guarda el catálogo con tu sesión Firebase; no necesita token para un repositorio público.</p><label>Etiqueta del Release<input id="package-release-tag" placeholder="adner-holo-prueba-02"></label><button id="package-import-release" type="button">Importar Release al catálogo</button><p id="package-import-status" role="status"></p>`;panel.append(importBox);
+$('package-import-release').onclick=async()=>{
+ const status=$('package-import-status'),a=api(),snapshot=prepared,repo=$('package-repo').value.trim(),tag=$('package-release-tag').value.trim();
+ if(!snapshot){status.textContent='Selecciona el ZIP y pulsa Validar ZIP primero.';return}
+ if(!a||!a.state.user||a.state.demo){status.textContent='Inicia sesión Firebase con la cuenta administradora.';return}
+ if(!/^[A-Za-z0-9_-]+\/[A-Za-z0-9_.-]+$/.test(repo)||repo.includes('..')||!/^[A-Za-z0-9_.~-]+$/.test(tag)||tag.includes('..')){status.textContent='Indica repositorio usuario/nombre y etiqueta válida.';return}
+ $('package-import-release').disabled=true;
+ try{
+  status.textContent='Consultando Release público…';
+  const response=await fetch('https://api.github.com/repos/'+repo+'/releases/tags/'+encodeURIComponent(tag),{headers:{Accept:'application/vnd.github+json'}});
+  if(!response.ok)throw Error('GitHub respondió '+response.status+' al consultar el Release.');
+  const release=await response.json();if(release.draft||release.tag_name!==tag)throw Error('El Release todavía no es público.');
+  const resolve=async(source,index)=>{
+   const bytes=snapshot.contents.get(source);if(!bytes)throw Error('Falta archivo local: '+source);
+   const name=index+'-payload.bin',asset=release.assets.find(x=>x.name===name&&x.state==='uploaded');
+   if(!asset||asset.size!==bytes.byteLength)throw Error('Falta el archivo publicado o no coincide su tamaño: '+name);
+   const hash=await sha(bytes);if(asset.digest&&asset.digest!=='sha256:'+hash)throw Error('El hash publicado no coincide: '+name);
+   const url=new URL(asset.browser_download_url);if(url.origin!=='https://github.com'||!url.pathname.startsWith('/'+repo+'/releases/download/'+tag+'/'))throw Error('URL de archivo rechazada.');
+   return{url:url.href,size:bytes.byteLength,sha256:hash};
+  };
+  const files=[];for(const [i,f] of snapshot.plan.files.entries()){const asset=await resolve(f.source,i*2),baseline=f.originalSource?await resolve(f.originalSource,i*2+1):undefined;files.push({...f,...asset,...(baseline?{baseline}:{})})}
+  const plan=P.validate({...snapshot.plan,files},true),record={name:plan.name||plan.id,type:plan.kind,description:'Paquete '+plan.kind+' · '+plan.game+' · archivos vinculados',routeId:'route-packages',enabled:false,url:'',filename:plan.id+'.json',size:files.reduce((n,f)=>n+f.size,0),mime:'application/vnd.adner.package+json',sha256:'',package:plan,updatedAt:new Date().toISOString()};
+  await a.state.sdk.set(a.state.sdk.ref(a.state.db,'ADNER_IOS_CLOUD/catalog/'+plan.id),record);
+  const old=a.state.items.find(x=>x.id===plan.id);if(old)Object.assign(old,record);else a.state.items.push({id:plan.id,...record});a.render();
+  status.textContent='Paquete importado DESACTIVADO. Actívalo y pulsa Publicar versión para enviarlo a la IPA.';
+ }catch(e){status.textContent='No se pudo importar: '+e.message}finally{$('package-import-release').disabled=false}
+};
 $('package-zip').onchange=()=>{prepared=null;$('package-upload').disabled=true;$('package-check').textContent='Archivo cambiado. Pulsa Validar ZIP.'};
 $('package-validate').onclick=async()=>{const f=$('package-zip').files[0];if(!f){$('package-message').textContent='Selecciona un ZIP';return}try{$('package-message').textContent='Validando estructura y descomprimiendo los archivos declarados…';prepared=await P.prepareZip(f);$('package-check').textContent=JSON.stringify(prepared.plan,null,2);$('package-upload').disabled=false;$('package-message').textContent='ZIP válido. Aún no se ha subido ni publicado.'}catch(e){prepared=null;$('package-upload').disabled=true;$('package-message').textContent=e.message}};
 const sha=async bytes=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(x=>x.toString(16).padStart(2,'0')).join('');
@@ -10,16 +37,16 @@ $('package-upload').onclick=async()=>{
  const snapshot=prepared,repo=$('package-repo').value.trim(),token=$('package-token').value.trim();
  if(!/^[A-Za-z0-9_-]+\/[A-Za-z0-9_.-]+$/.test(repo)||repo.includes('..')||!token){$('package-message').textContent='Indica repositorio usuario/nombre y un token autorizado para ese repositorio.';return}
  if(!confirm('Se creará un Release PÚBLICO en '+repo+' con los archivos de este paquete. ¿Continuar?'))return;
- let releaseId=null,recordSaved=false;
+ let releaseId=null,recordSaved=false,stage='consultar el repositorio';
  const headers={'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'};
  async function request(path,options={}){const response=await fetch('https://api.github.com/repos/'+repo+path,{...options,headers:{...headers,...options.headers}});if(!response.ok)throw Error('GitHub respondió '+response.status+'. Comprueba el repositorio, permisos del token y límites de la cuenta.');return response.status===204?null:response.json()}
  $('package-upload').disabled=true;$('package-validate').disabled=true;$('package-zip').disabled=true;
  try{
   const metadata=await request('');if(metadata.private)throw Error('El repositorio de recursos debe ser público; no cambies la privacidad del proyecto IPA para esto.');
-  const tag='adner-'+snapshot.plan.id+'-'+Date.now();
+  stage='crear el Release';const tag='adner-'+snapshot.plan.id+'-'+Date.now();
   const release=await request('/releases',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tag_name:tag,name:'ADNER · '+(snapshot.plan.name||snapshot.plan.id),body:'Recursos administrados para '+snapshot.plan.game+'. Archivos no ejecutables.',draft:false,prerelease:true})});releaseId=release.id;
-  const upload=async(source,index)=>{const bytes=snapshot.contents.get(source);if(!bytes)throw Error('Archivo del paquete no encontrado');const hash=await sha(bytes),name=String(index)+'-'+source.split('/').pop();$('package-message').textContent='Subiendo '+source;
-   const url='https://uploads.github.com/repos/'+repo+'/releases/'+release.id+'/assets?name='+encodeURIComponent(name);
+  const upload=async(source,index)=>{const bytes=snapshot.contents.get(source);if(!bytes)throw Error('Archivo del paquete no encontrado');const hash=await sha(bytes),name=String(index)+'-payload.bin';$('package-message').textContent='Subiendo '+source;
+   stage='subir '+source+' a uploads.github.com';const url='https://uploads.github.com/repos/'+repo+'/releases/'+release.id+'/assets?name='+encodeURIComponent(name);
    const response=await fetch(url,{method:'POST',headers:{...headers,'Content-Type':'application/octet-stream'},body:bytes});if(!response.ok)throw Error('No se pudo subir a GitHub ('+response.status+').');const asset=await response.json();return{url:asset.browser_download_url,size:bytes.byteLength,sha256:hash};};
   const files=[];for(const [i,f] of snapshot.plan.files.entries()){const asset=await upload(f.source,i*2),baseline=f.originalSource?await upload(f.originalSource,i*2+1):undefined;files.push({...f,...asset,...(baseline?{baseline}:{})})}
   const plan=P.validate({...snapshot.plan,files},true);
@@ -27,6 +54,6 @@ $('package-upload').onclick=async()=>{
   await a.state.sdk.set(a.state.sdk.ref(a.state.db,'ADNER_IOS_CLOUD/catalog/'+plan.id),record);recordSaved=true;
   const old=a.state.items.find(x=>x.id===plan.id);if(old)Object.assign(old,record);else a.state.items.push({id:plan.id,...record});
   await a.history('Paquete subido a GitHub',plan.id+' · '+plan.files.length+' archivos');a.render();$('package-message').textContent='Release subido y paquete guardado DESACTIVADO. Actívalo y pulsa Publicar versión para enviarlo a la IPA.';
- }catch(e){let cleanup='';if(releaseId&&!recordSaved){try{await request('/releases/'+releaseId,{method:'DELETE'})}catch{cleanup=' El Release parcial no se pudo retirar; revísalo en GitHub.'}}$('package-message').textContent='No se completó la operación: '+e.message+cleanup;
+ }catch(e){let cleanup='';if(releaseId&&!recordSaved){try{await request('/releases/'+releaseId,{method:'DELETE'})}catch{cleanup=' El Release parcial no se pudo retirar; revísalo en GitHub.'}}$('package-message').textContent='No se completó la operación al '+stage+': '+e.message+cleanup+(e instanceof TypeError?' Puede ser un bloqueo de red o CORS. Usa Importar archivos ya publicados.':'');
  }finally{$('package-token').value='';$('package-upload').disabled=!prepared;$('package-validate').disabled=false;$('package-zip').disabled=false}
 };

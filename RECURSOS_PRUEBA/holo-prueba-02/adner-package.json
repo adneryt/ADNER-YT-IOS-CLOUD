@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "holo-adneryt-prueba-02",
+  "name": "Holograma ADNER YT · Prueba 02 Optional",
+  "kind": "hologram",
+  "game": "com.dts.freefiremax",
+  "base": "Documents/contentcache/Optional/ios",
+  "protectedShader": "gameassetbundles/shaders.eDjuzR1ocvtcFd~2BTzimtXF99jqU~3D",
+  "files": [
+    {
+      "source": "mod/fileinfo",
+      "originalSource": "original/fileinfo",
+      "target": "fileinfo",
+      "mode": "replace",
+      "role": "fileinfo"
+    },
+    {
+      "source": "mod/shaders.ADNERYT~2FeDjuzR1ocvtcFd~2BTzimtXF99jqU~3D",
+      "target": "gameassetbundles/shaders.ADNERYT~2FeDjuzR1ocvtcFd~2BTzimtXF99jqU~3D",
+      "mode": "add",
+      "role": "shader"
+    }
+  ]
+}

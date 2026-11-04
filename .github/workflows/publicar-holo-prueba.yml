@@ -1,0 +1,26 @@
+name: Publicar recursos de prueba Holo 02
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'RECURSOS_PRUEBA/holo-prueba-02/**'
+      - '.github/workflows/publicar-holo-prueba.yml'
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publicar archivos de prueba
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view adner-holo-prueba-02 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "El Release ya existe; se conserva sin reemplazar archivos."
+          else
+            gh release create adner-holo-prueba-02 RECURSOS_PRUEBA/holo-prueba-02/* --repo "$GITHUB_REPOSITORY" --title 'Holograma ADNER YT - Prueba 02 Optional' --notes 'Archivos de prueba para la copia de trabajo de ADNER. No concede acceso a carpetas privadas del juego.' --prerelease
+          fi
