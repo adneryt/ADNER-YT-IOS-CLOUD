@@ -37,7 +37,15 @@ $('package-import-release').onclick=async()=>{
  }catch(e){status.textContent='No se pudo importar: '+e.message}finally{$('package-import-release').disabled=false}
 };
 for(const field of ['pkg-template-kind','pkg-template-zone','pkg-template-game','pkg-protected-shader'])$(field).addEventListener('change',()=>{prepared=null;$('package-upload').disabled=true;$('package-check').textContent='Configuración cambiada. Pulsa Validar ZIP nuevamente.'});
-$('package-zip').onchange=()=>{prepared=null;$('package-upload').disabled=true;$('package-check').textContent='Archivo cambiado. Pulsa Validar ZIP.';$('pkg-selected').textContent=$('package-zip').files[0]?'Seleccionado: '+$('package-zip').files[0].name+' (sin subir).':'Ningún ZIP seleccionado.'};
+$('package-zip').onchange=()=>{
+ prepared=null;
+ $('package-upload').disabled=true;
+ $('package-check').textContent='ZIP seleccionado. Validando automáticamente...';
+ $('pkg-selected').textContent=$('package-zip').files[0]
+  ?'Seleccionado: '+$('package-zip').files[0].name+' (sin subir).'
+  :'Ningún ZIP seleccionado.';
+ if($('package-zip').files[0])$('package-validate').click();
+};
 $('package-validate').onclick=async()=>{const f=$('package-zip').files[0];if(!f){$('package-message').textContent='Selecciona un ZIP';return}try{$('package-message').textContent='Validando estructura y descomprimiendo los archivos declarados…';const entries=await P.listZip(f);const hasManifest=entries.some(x=>x.path==='adner-package.json');
  if(hasManifest){prepared=await P.prepareZip(f)}
  else {
