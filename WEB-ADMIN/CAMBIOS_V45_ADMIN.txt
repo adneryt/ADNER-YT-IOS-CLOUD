@@ -1,0 +1,10 @@
+ADNER IOS ADMIN V4.5 - Carga ZIP directa
+
+- Avatar acepta ZIP con carpeta contenedora, sin adner-package.json, y genera metadatos para HEAD/NECK/CHEST/BODY.
+- Selección de FF MAX / FF Normal.
+- Base Avatar: Documents/contentcache/Compulsory/ios/gameassetbundles/avatar; target: nombre real del archivo contenido en el ZIP.
+- Holo/Bypass solo autoconfiguran con fileinfo identificable; HOLO requiere shader adicional y nombre real de shader protegida.
+- GitHub Releases/Firebase conservan flujo existente; los registros se guardan desactivados hasta publicarlos.
+- No se genera respaldo original ficticio; motor debe comprobar accesos y crear respaldo real.
+- No prueba escritura dentro del sandbox del juego ni valida efectos del archivo binario.
+- No modificar el juego ni la IPA en este paquete.

@@ -1,0 +1,8 @@
+ADNER YT IOS — Admin V4.4 (revisión local)
+
+1. El editor de recursos ofrece solo rutas propias de ADNER y botón para crear una ruta manual bajo Documents/ADNER/Resources o Library/Caches/ADNER/Resources.
+2. Las referencias de contenido de Free Fire siguen siendo documentales: el selector NO concede permisos sobre contenedores ajenos.
+3. El cargador de paquetes ahora muestra tipo, zona y archivos del ZIP validado, e incluye un ejemplo descargable de adner-package.json.
+4. NO se sube ni se publica nada automáticamente. Se mantienen los flujos existentes de GitHub Releases y Firebase.
+5. Los ZIP requieren manifest y archivos declarados. El JSON de ejemplo no es instalable y debe personalizarse.
+6. Antes de desplegar, probar en entorno local y revisar permisos y rutas en el iPhone.
