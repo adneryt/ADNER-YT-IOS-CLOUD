@@ -8,16 +8,16 @@ const presetRoutes=[
  {id:'route-hologram',name:'Holograma ADNER · local',kind:'app',path:'Documents/ADNER/Resources/hologram',system:true},
  {id:'route-shared',name:'Archivos ADNER · local',kind:'app',path:'Documents/ADNER/Resources/shared',system:true},
  ...['FF NORMAL','FF MAX'].flatMap((game,i)=>{const id=i===0?'normal':'max';return [
-  {id:'ref-'+id+'-avatar',name:game+' · Avatar',kind:'reference',path:'Documents/contentcache/Optional/ios/optionalavatarres',system:true},
-  {id:'ref-'+id+'-holo',name:game+' · Holograma',kind:'reference',path:'Documents/contentcache/Compulsory/ios/gameassetbundles',system:true}
+  {id:'ref-'+id+'-avatar',name:game+' · Avatar',kind:'reference',path:'Documents/contentcache/Compulsory/ios',system:true},
+  {id:'ref-'+id+'-holo',name:game+' · Holograma',kind:'reference',path:'Documents/contentcache/Optional/ios',system:true}
  ];}),
- {id:'ref-optional',name:'Avatar · Optional',kind:'reference',path:'Documents/contentcache/Optional/ios',system:true},
- {id:'ref-compulsory',name:'Holograma · Compulsory',kind:'reference',path:'Documents/contentcache/Compulsory/ios',system:true}
+ {id:'ref-optional',name:'Holograma · Optional',kind:'reference',path:'Documents/contentcache/Optional/ios',system:true},
+ {id:'ref-compulsory',name:'Avatar · Compulsory',kind:'reference',path:'Documents/contentcache/Compulsory/ios',system:true}
 ];
 const baseTemplates=['normal','max'].flatMap((id,i)=>{
  const game=i===0?'FF NORMAL':'FF MAX';
  return [
-  ...['Avatar base','Avatar ropa','Avatar armas','Avatar personaje'].map((name,j)=>({id:'base-'+id+'-avatar-'+j,name:game+' · '+name,type:'avatar',routeId:'ref-'+id+'-avatar'})),
+  ...['HEAD','NECK','CHEST','BODY'].map((name,j)=>({id:'base-'+id+'-avatar-'+j,name:game+' · '+name,type:'avatar',routeId:'ref-'+id+'-avatar'})),
   ...['Holograma base','Holograma rojo','Holograma celeste','Holograma morado','Holograma bordes'].map((name,j)=>({id:'base-'+id+'-holo-'+j,name:game+' · '+name,type:'hologram',routeId:'ref-'+id+'-holo'}))
  ];
 });
