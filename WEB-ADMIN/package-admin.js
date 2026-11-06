@@ -57,3 +57,44 @@ $('package-upload').onclick=async()=>{
  }catch(e){let cleanup='';if(releaseId&&!recordSaved){try{await request('/releases/'+releaseId,{method:'DELETE'})}catch{cleanup=' El Release parcial no se pudo retirar; revísalo en GitHub.'}}$('package-message').textContent='No se completó la operación al '+stage+': '+e.message+cleanup+(e instanceof TypeError?' Puede ser un bloqueo de red o CORS. Usa Importar archivos ya publicados.':'');
  }finally{$('package-token').value='';$('package-upload').disabled=!prepared;$('package-validate').disabled=false;$('package-zip').disabled=false}
 };
+
+// HEAD test preset: uses the authenticated administrator session, never embedded credentials.
+const headBox=document.createElement('div');headBox.className='panel';
+headBox.innerHTML='<h3>HEAD · Prueba 01</h3><p class="hint">Seleccion de cabeza en verde; activar y restablecer con el boton rojo. HOLO tiene su propio control. Destino: Documents/contentcache/Compulsory/ios/gameassetbundles/avatar.</p><button type="button" id="head-test-publish">Añadir HEAD de prueba y publicar en IPA</button><p id="head-test-status" role="status"></p>';
+panel.prepend(headBox);
+$('head-test-publish').onclick=async()=>{
+ const a=api(),status=$('head-test-status'),button=$('head-test-publish');
+ if(!a?.state.user||a.state.demo){status.textContent='Inicia sesion con Firebase como administrador para guardar y publicar HEAD.';return}
+ button.disabled=true;
+ try{
+  status.textContent='Verificando recursos HEAD publicados…';
+  const response=await fetch('./head-prueba-01.json',{cache:'no-store'});if(!response.ok)throw Error('No se encontro el paquete HEAD preparado.');
+  const plan=P.validate(await response.json(),true);
+  if(plan.id!=='head-adneryt-prueba-01'||plan.targetZone!=='head'||plan.kind!=='avatar')throw Error('Identidad del paquete no valida.');
+  const rel=await fetch('https://api.github.com/repos/adneryt/ADNER-YT-IOS-CLOUD/releases/tags/adner-head-prueba-01');
+  if(!rel.ok)throw Error('Los archivos HEAD todavia se estan publicando. Intenta de nuevo cuando termine GitHub Actions.');
+  const release=await rel.json();if(release.draft)throw Error('Release HEAD pendiente.');
+  for(const [i,file] of plan.files.entries()){
+   for(const [name,asset] of [[i*2+'-payload.bin',file],[i*2+1+'-payload.bin',file.baseline]]){
+    if(!asset)continue;
+    const published=release.assets.find(x=>x.name===name&&x.state==='uploaded');
+    if(!published||published.size!==asset.size||published.digest!=='sha256:'+asset.sha256||published.browser_download_url!==asset.url)throw Error('No coincide el recurso publicado: '+name);
+   }
+  }
+  const item={id:plan.id,name:plan.name,type:'avatar',targetZone:'head',description:'HEAD de prueba: seleccion y boton rojo; original respaldado por 3105.',enabled:true,package:plan};
+  const record={...item,routeId:'route-packages',url:'',filename:plan.id+'.json',size:plan.files.reduce((n,f)=>n+f.size,0),mime:'application/vnd.adner.package+json',sha256:'',updatedAt:new Date().toISOString()};delete record.id;
+  const sdk=a.state.sdk,db=a.state.db;
+  await sdk.set(sdk.ref(db,'ADNER_IOS_CLOUD/catalog/'+plan.id),record);
+  const result=await sdk.runTransaction(sdk.ref(db,'ADNER_IOS_CLOUD/public/production'),current=>{
+   const m=current?.payload?JSON.parse(current.payload):{schemaVersion:1,channel:'production',version:'0.0.0',status:'active',items:[]};
+   if(m.schemaVersion!==1||m.channel!=='production'||!Array.isArray(m.items)||m.status!=='active')throw Error('El canal esta en mantenimiento o es incompatible. HEAD se guardo en catalogo.');
+   m.items=m.items.filter(x=>x.id!==plan.id);m.items.push(item);if(m.items.length>50)throw Error('Catalogo lleno.');
+   const v=/^(\d+)\.(\d+)\.(\d+)$/.exec(m.version||'');if(v)m.version=v[1]+'.'+v[2]+'.'+(Number(v[3])+1);
+   m.publishedAt=new Date().toISOString();const payload=JSON.stringify(m);if(payload.length>900000)throw Error('Catalogo demasiado grande.');
+   return {...current,payload,version:m.version,status:m.status,itemCount:m.items.length,updatedAt:m.publishedAt};
+  });
+  if(!result.committed)throw Error('No se pudo publicar HEAD.');
+  const old=a.state.items.find(x=>x.id===plan.id);if(old)Object.assign(old,record);else a.state.items.push({id:plan.id,...record});a.render();
+  status.textContent='HEAD guardado y publicado. En la IPA pulsa Sincronizar, selecciona HEAD y usa el boton rojo. HOLO permanece independiente.';
+ }catch(e){status.textContent='No se completo: '+e.message}finally{button.disabled=false}
+};

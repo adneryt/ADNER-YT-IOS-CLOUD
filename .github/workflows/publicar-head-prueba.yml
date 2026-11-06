@@ -1,0 +1,33 @@
+name: Publicar recursos de prueba HEAD 01
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'RECURSOS_PRUEBA/head-prueba-01/**'
+      - '.github/workflows/publicar-head-prueba.yml'
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publicar archivos de prueba
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag=adner-head-prueba-01
+          retry() { for attempt in 1 2 3; do if "$@"; then return 0; fi; sleep 3; done; return 1; }
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            retry gh release create "$tag" --repo "$GITHUB_REPOSITORY" --title 'HEAD ADNER YT - Prueba 01 Compulsory' --notes 'Recursos de prueba para la copia de trabajo de ADNER.' --prerelease --draft || gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null
+          fi
+          retry gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' > /tmp/adner-assets.txt
+          for asset in RECURSOS_PRUEBA/head-prueba-01/*; do
+            if ! grep -Fxq "$(basename "$asset")" /tmp/adner-assets.txt; then
+              retry gh release upload "$tag" "$asset" --repo "$GITHUB_REPOSITORY"
+            fi
+          done
+          retry gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease

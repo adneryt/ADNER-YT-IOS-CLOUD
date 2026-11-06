@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "head-adneryt-prueba-01",
+  "name": "HEAD ADNER YT \u00b7 Prueba 01",
+  "kind": "avatar",
+  "game": "com.dts.freefiremax",
+  "base": "Documents/contentcache/Compulsory/ios/gameassetbundles/avatar",
+  "files": [
+    {
+      "source": "mod/assetindexer.YJ~2FW7EkU5pRkVg51NrKyx4LXid8~3D",
+      "originalSource": "original/assetindexer.YJ~2FW7EkU5pRkVg51NrKyx4LXid8~3D",
+      "target": "assetindexer.YJ~2FW7EkU5pRkVg51NrKyx4LXid8~3D",
+      "mode": "replace",
+      "role": "avatar",
+      "url": "https://github.com/adneryt/ADNER-YT-IOS-CLOUD/releases/download/adner-head-prueba-01/0-payload.bin",
+      "size": 46640,
+      "sha256": "8c4fc127c5d065f57273761646adf8601adcf3afb5da86d084e70f3bdf03f9c7",
+      "baseline": {
+        "url": "https://github.com/adneryt/ADNER-YT-IOS-CLOUD/releases/download/adner-head-prueba-01/1-payload.bin",
+        "size": 46640,
+        "sha256": "e29b31619db60ad098bb150833b5f9ee7cf8751f12ea33cf442c017a91aa5915"
+      }
+    }
+  ],
+  "targetZone": "head"
+}
