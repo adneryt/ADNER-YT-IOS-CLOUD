@@ -7,7 +7,7 @@ import {createFirebaseVerifier} from '../src/firebase-auth.js';
 import {createHandler} from '../src/index.js';
 import {digest} from '../src/license-api.js';
 function database(){
- const sql=new DatabaseSync(':memory:');sql.exec(readFileSync(new URL('../migrations/0001_licenses.sql',import.meta.url),'utf8'));sql.exec(readFileSync(new URL('../migrations/0002_license_deletion_audit.sql',import.meta.url),'utf8'));
+ const sql=new DatabaseSync(':memory:');sql.exec(readFileSync(new URL('../migrations/0001_licenses.sql',import.meta.url),'utf8'));sql.exec(readFileSync(new URL('../migrations/0002_license_deletion_audit.sql',import.meta.url),'utf8'));sql.exec(readFileSync(new URL('../migrations/0003_license_key_vault.sql',import.meta.url),'utf8'));
  const statement=(query,args=[])=>({bind(...values){return statement(query,values)},async first(){return sql.prepare(query).get(...args)||null},async all(){return {results:sql.prepare(query).all(...args)}},async run(){const x=sql.prepare(query).run(...args);return {meta:{changes:Number(x.changes)}}},query,args});
  return {prepare:statement,async batch(list){sql.exec('BEGIN');try{const out=[];for(const x of list)out.push(await x.run());sql.exec('COMMIT');return out}catch(e){sql.exec('ROLLBACK');throw e}},sql};
 }
@@ -23,7 +23,7 @@ test('Firebase signature, project, UID and required expiry are enforced',async()
  assert.equal(await verify('invalid'),false);
 });
 test('CORS and admin authentication reject before database mutation',async()=>{
- const DB=database(),handler=createHandler(async()=>false),env={DB};
+ const DB=database(),handler=createHandler(async()=>false),env={DB,LICENSE_VAULT_KEY:Buffer.alloc(32,7).toString('base64')};
  for(const [headers,status]of [[{Origin:'https://evil.test'},403],[{},401]]){const r=await handler.fetch(new Request('https://test/admin/licenses',{method:'POST',headers,body:'{}'}),env);assert.equal(r.status,status)}
  assert.equal(DB.sql.prepare('SELECT COUNT(*) AS n FROM licenses').get().n,0);
  const r=await handler.fetch(new Request('https://test/admin/licenses',{method:'OPTIONS',headers:{Origin:'https://adneryt.github.io','Access-Control-Request-Method':'POST','Access-Control-Request-Headers':'authorization,content-type'}}),env);
@@ -41,7 +41,7 @@ test('production ignores local secret, forbids local origins and enforces reques
  DB.sql.close();
 });
 test('D1 schema lifecycle: bulk, signed activation, caps, pause/resume, reset and revoke',async()=>{
- const DB=database(),handler=createHandler(async token=>token==='test-admin'),env={DB};
+ const DB=database(),handler=createHandler(async token=>token==='test-admin'),env={DB,LICENSE_VAULT_KEY:Buffer.alloc(32,7).toString('base64')};
  async function request(path,method='GET',data,admin=true){return handler.fetch(new Request('https://test'+path,{method,headers:{...(admin?{Authorization:'Bearer test-admin'}:{}),'Content-Type':'application/json'},...(data?{body:JSON.stringify(data)}:{})}),env)}
  const created=await request('/admin/licenses','POST',{label:'TEST',hours:24,maxDevices:1,startMode:'first-use',count:2});assert.equal(created.status,201);
  const records=(await created.json()).licenses;assert.equal(records.length,2);const {id,key}=records[0];
@@ -64,7 +64,7 @@ test('D1 schema lifecycle: bulk, signed activation, caps, pause/resume, reset an
  DB.sql.close();
 });
 test('invalid input and forged proofs cannot create or activate licenses; unlimited and expiry work',async()=>{
- const DB=database(),handler=createHandler(async t=>t==='test-admin'),env={DB};
+ const DB=database(),handler=createHandler(async t=>t==='test-admin'),env={DB,LICENSE_VAULT_KEY:Buffer.alloc(32,7).toString('base64')};
  const call=(path,data,admin=true)=>handler.fetch(new Request('https://test'+path,{method:'POST',headers:{'Content-Type':'application/json',...(admin?{Authorization:'Bearer test-admin'}:{})},body:JSON.stringify(data)}),env);
  for(const data of [null,[],{label:'x',hours:0,maxDevices:1,startMode:'activation'},{label:'x',hours:24,maxDevices:1,startMode:'activation',count:26}])assert.equal((await call('/admin/licenses',data)).status,400);
  const result=await (await call('/admin/licenses',{label:'Unlimited',hours:24,maxDevices:0,startMode:'creation'})).json();
@@ -80,7 +80,7 @@ test('invalid input and forged proofs cannot create or activate licenses; unlimi
 });
 
 test('permanent deletion requires admin and explicit confirmation, is atomic, and preserves separate audit',async()=>{
- const DB=database(),handler=createHandler(async t=>t==='test-admin'),env={DB};
+ const DB=database(),handler=createHandler(async t=>t==='test-admin'),env={DB,LICENSE_VAULT_KEY:Buffer.alloc(32,7).toString('base64')};
  const request=(path,method='GET',data,auth=true)=>handler.fetch(new Request('https://test'+path,{method,headers:{...(auth?{Authorization:'Bearer test-admin'}:{}),'Content-Type':'application/json'},...(data?{body:JSON.stringify(data)}:{})}),env);
  const a=await (await request('/admin/licenses','POST',{label:'DELETE ME',hours:24,maxDevices:1,startMode:'activation'})).json();
  const b=await (await request('/admin/licenses','POST',{label:'KEEP ME',hours:24,maxDevices:1,startMode:'activation'})).json();
@@ -95,5 +95,100 @@ test('permanent deletion requires admin and explicit confirmation, is atomic, an
  assert.equal(DB.sql.prepare('SELECT COUNT(*) AS n FROM license_history WHERE license_id=?').get(a.id).n,0);
  assert.equal(DB.sql.prepare('SELECT COUNT(*) AS n FROM license_deletion_audit WHERE license_id=?').get(a.id).n,1);
  assert.equal((await request(path,'POST',{confirm:'ELIMINAR',licenseId:a.id})).status,404);
+ DB.sql.close();
+});
+
+
+test('ADNER_V3_VAULT_INTEGRATION_TEST: crear, recuperar y eliminar key cifrada',async()=>{
+ const DB=database();
+ const handler=createHandler(async token=>token==='test-admin');
+ const env={
+  DB,
+  LICENSE_VAULT_KEY:Buffer.alloc(32,7).toString('base64')
+ };
+
+ const request=(path,method='GET',data,auth=true,environment=env)=>
+  handler.fetch(new Request('https://test'+path,{
+   method,
+   headers:{
+    ...(auth?{Authorization:'Bearer test-admin'}:{}),
+    'Content-Type':'application/json'
+   },
+   ...(data?{body:JSON.stringify(data)}:{})
+  }),environment);
+
+ const input={
+  label:'V3 ENCRYPTED TEST',
+  hours:24,
+  maxDevices:1,
+  startMode:'activation',
+  count:1
+ };
+
+ // No crear licencias si el secreto falta.
+ const noSecret=await request(
+  '/admin/licenses','POST',input,true,{DB}
+ );
+ assert.equal(noSecret.status,503);
+ assert.equal(DB.sql.prepare('SELECT COUNT(*) AS n FROM licenses').get().n,0);
+
+ const created=await request('/admin/licenses','POST',input);
+ assert.equal(created.status,201);
+ const {id,key}=(await created.json()).licenses[0];
+
+ // D1 guarda contenido cifrado, no la key original.
+ const row=DB.sql.prepare(
+  'SELECT ciphertext,nonce,key_version FROM license_key_vault WHERE license_id=?'
+ ).get(id);
+
+ assert.ok(row);
+ assert.equal(row.key_version,1);
+ assert.equal(row.nonce.length,12);
+ assert.equal(
+  Buffer.from(row.ciphertext).includes(Buffer.from(key)),
+  false
+ );
+
+ const path='/admin/licenses/'+id+'/key';
+
+ // No debe revelarse sin autorizacion.
+ assert.equal((await request(path,'GET',undefined,false)).status,401);
+
+ // Administrador recupera exactamente la misma key.
+ const recovered=await request(path);
+ assert.equal(recovered.status,200);
+ assert.equal((await recovered.json()).key,key);
+
+ // Una key anterior sin vault no puede recuperarse.
+ DB.sql.prepare('DELETE FROM license_key_vault WHERE license_id=?').run(id);
+ assert.equal((await request(path)).status,404);
+
+ // Volver a crear otra licencia para probar el borrado completo.
+ const second=await request('/admin/licenses','POST',{
+  ...input,label:'V3 DELETE TEST'
+ });
+ assert.equal(second.status,201);
+ const other=(await second.json()).licenses[0];
+
+ const deletion=await request(
+  '/admin/licenses/'+other.id+'/delete',
+  'POST',
+  {confirm:'ELIMINAR',licenseId:other.id}
+ );
+ assert.equal(deletion.status,200);
+
+ assert.equal(
+  DB.sql.prepare('SELECT COUNT(*) AS n FROM license_key_vault WHERE license_id=?').get(other.id).n,
+  0
+ );
+ assert.equal(
+  DB.sql.prepare('SELECT COUNT(*) AS n FROM license_deletion_audit WHERE license_id=?').get(other.id).n,
+  1
+ );
+ assert.equal(
+  (await request('/admin/licenses/'+other.id+'/key')).status,
+  404
+ );
+
  DB.sql.close();
 });

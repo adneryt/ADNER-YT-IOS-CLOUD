@@ -1,3 +1,4 @@
+import {importMasterKey,encryptLicenseKey,decryptLicenseKey} from './key-vault.js';
 const encoder=new TextEncoder();
 export const digest=async value=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',typeof value==='string'?encoder.encode(value):value))].map(x=>x.toString(16).padStart(2,'0')).join('');
 const reply=(data,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
@@ -26,19 +27,38 @@ export async function adminRoutes(request,env,path){
   if(!Number.isInteger(count)||count<1||count>25)fail('Cantidad invalida (1..25)');
   if(!['creation','activation'].includes(mode))fail('Modo de inicio invalido');
   if(typeof d.label!=='string'||d.label.length>80)fail('Nombre invalido');
+  if(!env.LICENSE_VAULT_KEY)fail('Almacen cifrado no configurado',503);
+  const masterKey=await importMasterKey(env.LICENSE_VAULT_KEY);
   const licenses=[],statements=[];
   for(let i=0;i<count;i++){
    const key=randomKey(),id=await digest(key),label=(d.label||'Licencia ADNER')+(count>1?' '+(i+1):'');
    statements.push(db.prepare(`INSERT INTO licenses(id,label,created_at,duration_seconds,start_mode,expires_at,max_devices,status) VALUES(?,?,?,?,?,?,?,'active')`).bind(id,label,now,hours*3600,mode,mode==='creation'?now+hours*3600000:null,max));
    statements.push(db.prepare(`INSERT INTO license_history(license_id,action,created_at,details) VALUES(?,'created',?,'Creada desde administrador')`).bind(id,now));
+   const sealed=await encryptLicenseKey(masterKey,id,key);
+   statements.push(db.prepare('INSERT INTO license_key_vault(license_id,ciphertext,nonce,key_version,created_at) VALUES(?,?,?,?,?)').bind(id,sealed.ciphertext,sealed.nonce,sealed.keyVersion,now));
    licenses.push({id,key,label});
   }
   await db.batch(statements);
-  return reply({ok:true,...(count===1?licenses[0]:{}),licenses,message:'Copia las claves ahora; no se recuperan despues.'},201);
+  return reply({ok:true,...(count===1?licenses[0]:{}),licenses,message:'Keys guardadas cifradas. Pueden recuperarse desde el administrador.'},201);
  }
- const match=path.match(/^\/admin\/licenses\/([a-f0-9]{64})(?:\/(pause|resume|revoke|reset-devices|history|delete))?$/);
+ const match=path.match(/^\/admin\/licenses\/([a-f0-9]{64})(?:\/(pause|resume|revoke|reset-devices|history|delete|key))?$/);
  if(!match)return reply({error:'Operacion no disponible'},404);
  const [,id,action]=match;if(!idOK(id))fail('ID invalido');
+ if(action==='key'&&request.method==='GET'){
+  if(!env.LICENSE_VAULT_KEY)fail('Almacen cifrado no configurado',503);
+  const row=await db.prepare(
+   'SELECT v.ciphertext,v.nonce,v.key_version FROM license_key_vault v JOIN licenses l ON l.id=v.license_id WHERE v.license_id=?'
+  ).bind(id).first();
+
+  if(!row)fail('Esta licencia no tiene key recuperable',404);
+  if(row.key_version!==1)fail('Version de cifrado incompatible',503);
+
+  const master=await importMasterKey(env.LICENSE_VAULT_KEY);
+  const key=await decryptLicenseKey(master,id,row.ciphertext,row.nonce);
+
+  if(await digest(key)!==id)fail('Integridad de key invalida',503);
+  return reply({ok:true,id,key});
+ }
  if(action==='delete'&&request.method==='POST'){
   const d=await body(request);
   if(d.confirm!=='ELIMINAR'||d.licenseId!==id)fail('Confirmacion de eliminacion invalida',400);
@@ -46,12 +66,13 @@ export async function adminRoutes(request,env,path){
   if(!existing)fail('Licencia inexistente',404);
   // D1 batch is atomic; deletion audit lives outside the deleted license's FK tree.
   const result=await db.batch([
+   db.prepare('DELETE FROM license_key_vault WHERE license_id=?').bind(id),
    db.prepare('INSERT INTO license_deletion_audit(license_id,label,status,deleted_at,actor) VALUES(?,?,?,?,?)').bind(id,existing.label,existing.status,now,'firebase-admin'),
    db.prepare('DELETE FROM license_devices WHERE license_id=?').bind(id),
    db.prepare('DELETE FROM license_history WHERE license_id=?').bind(id),
    db.prepare('DELETE FROM licenses WHERE id=?').bind(id)
   ]);
-  if(result[3].meta.changes!==1)fail('No se completo la eliminacion',409);
+  if(result[result.length-1].meta.changes!==1)fail('No se completo la eliminacion',409);
   return reply({ok:true,deleted:true});
  }
  if(action==='history'&&request.method==='GET'){
