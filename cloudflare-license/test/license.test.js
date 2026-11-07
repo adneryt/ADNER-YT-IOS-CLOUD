@@ -67,4 +67,3 @@ test('invalid input and forged proofs cannot create or activate licenses; unlimi
  }
  assert.equal(DB.sql.prepare('SELECT COUNT(*) AS n FROM license_devices').get().n,2);DB.sql.close();
 });
-
