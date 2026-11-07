@@ -1,0 +1,12 @@
+﻿{
+    "main":  "src/index.js",
+    "d1_databases":  [
+                         {
+                             "database_name":  "adner-yt-ios-licenses",
+                             "database_id":  "b7ac5409-93af-42d1-bf18-36f30f51c547",
+                             "binding":  "DB"
+                         }
+                     ],
+    "name":  "adner-yt-ios-license",
+    "compatibility_date":  "2026-11-06"
+}

@@ -1,0 +1,12 @@
+node_modules/
+.wrangler/
+.dev.vars
+.dev.vars.*
+.env
+.env.*
+*.log.adner-test-key.txt
+src/index.before-authdiag.js
+package.backup.json
+.adner-test-key.txt
+src/index.health.backup.js
+*.log
