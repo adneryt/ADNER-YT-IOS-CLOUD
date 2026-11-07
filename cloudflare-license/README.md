@@ -1,13 +1,14 @@
 # ADNER licenses: local Firebase + Cloudflare integration
 
 This branch prepares Cloudflare D1 licenses without deploying Firebase Functions.
-Production remains disabled in `WEB-ADMIN/license-service-config.json` and in the IPA.
+Public Worker deployed on 2026-11-07; see DEPLOYMENT.md for verified URL and tests.
+The web config now points to it. IPA license enforcement remains disabled.
 
 Verified locally on 2026-11-07: the user signed into the actual local web admin;
 Worker logs confirmed GET /admin/session 200, POST /admin/licenses 201 and
 GET /admin/licenses 200. No ID tokens or generated keys are included in this report.
-No Worker has been deployed by this change. Authentication seen in the published
-admin confirms its web login, not acceptance of its token by this Worker.
+The initial web login was verified locally. Remote authenticated operations still
+need a separate check from the published administrator origin.
 
 ## Local checks (PowerShell 5.1)
 
@@ -39,8 +40,8 @@ and migration file are retained. No destructive migration was introduced.
 The active `src/index.js` now accepts Firebase ID tokens through
 `src/firebase-auth.js`: Google RS256 signature, project audience/issuer, exact
 admin UID, exp/iat/auth_time. The user confirmed the configured UID. The existing
-ADMIN_SECRET server-only path remains for local tools; it is never sent to the
-web UI. JWT verification does not currently check Firebase refresh-token
+ADMIN_SECRET path works only outside production with local origins enabled; it
+is never sent to the web UI and no remote secret was configured. JWT verification does not currently check Firebase refresh-token
 revocation/disabled-user state online; an issued ID token can remain valid until
 its expiration. Review this before production deployment.
 
@@ -68,7 +69,8 @@ the duration or revoke the key; a holder can register again.
 D1 batch checks device limit and first activation atomically. Proof format is
 SHA256(key) + "|" + base64(Ed25519 raw public key) + "|" + timestamp milliseconds,
 signed by that private key. Timestamp tolerance five minutes, lease up to 60s.
-Use TLS, never log keys/tokens/proof bodies. Add abuse/rate limits before release.
+Use TLS, never log keys/tokens/proof bodies. Production now uses a coarse
+120 requests/minute/IP/location limiter; see DEPLOYMENT.md for limitations.
 
 ## Administrator / files
 
