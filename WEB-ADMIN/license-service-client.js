@@ -22,6 +22,10 @@
    if(d.action==='checkAdmin')return request('/admin/session');
    if(d.action==='listLicenses'){const r=await request('/admin/licenses');return {licenses:r.licenses.map(x=>({...x,expiresAt:x.expires_at,maxDevices:x.max_devices,startMode:x.start_mode,revoked:x.status==='revoked'}))};}
    if(d.action==='createLicense')return request('/admin/licenses','POST',{label:d.label,hours:d.hours,maxDevices:d.maxDevices,startMode:d.startMode,count:d.count||1});
+   if(d.action==='getLicenseKey'){
+    if(!/^[a-f0-9]{64}$/.test(d.id))throw Error('ID de licencia invalido');
+    return request('/admin/licenses/'+d.id+'/key','GET');
+   }
    const actions={revokeLicense:'revoke',pauseLicense:'pause',resumeLicense:'resume',resetDevices:'reset-devices',licenseHistory:'history',deleteLicense:'delete'};
    if(!actions[d.action]||!/^[a-f0-9]{64}$/.test(d.id))throw Error('Operacion de licencia no valida');
    return request('/admin/licenses/'+d.id+'/'+actions[d.action],d.action==='licenseHistory'?'GET':'POST',d.action==='licenseHistory'?undefined:d.action==='deleteLicense'?{confirm:d.confirm,licenseId:d.id}:{});

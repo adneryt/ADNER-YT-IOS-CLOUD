@@ -49,7 +49,7 @@ async function initFirebase(){
   state.sdk={...a,...b,...c};state.app=a.initializeApp(firebaseConfig);state.auth=b.getAuth(state.app);state.db=c.getDatabase(state.app,firebaseConfig.databaseURL);
   await b.setPersistence(state.auth,b.browserLocalPersistence);
   b.onAuthStateChanged(state.auth,async user=>{
-   if(!user){state.user=null;state.items=[];state.routes=[];state.history=[];state.published=null;noticeMode();return}
+   if(!user){state.user=null;state.items=[];state.routes=[];state.history=[];state.published=null;window.dispatchEvent(new Event('adner-auth-cleared'));noticeMode();return}
    // Comprobación visual; las REGLAS del servidor tienen autoridad final.
    if(user.uid!==adminUid){await b.signOut(state.auth);toast('Este correo no coincide con el UID administrador autorizado.');return}
    state.user=user;state.demo=false;noticeMode();await refreshData();
