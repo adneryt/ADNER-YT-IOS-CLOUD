@@ -1,18 +1,21 @@
 {
-    "name":  "cloudflare-license",
-    "version":  "1.0.0",
-    "description":  "",
-    "main":  "index.js",
-    "scripts":  {
-                    "test":  "echo \"Error: no test specified\" \u0026\u0026 exit 1"
-                },
-    "keywords":  [
-
-                 ],
-    "author":  "",
-    "license":  "ISC",
-    "devDependencies":  {
-                            "wrangler":  "^4.158.0"
-                        },
-    "type":  "module"
+  "name": "cloudflare-license",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "dev": "wrangler dev --port 8789 --var ALLOW_LOCAL_ORIGINS:true",
+    "check": "wrangler deploy --dry-run"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "wrangler": "^4.158.0"
+  },
+  "type": "module",
+  "dependencies": {
+    "jose": "^6.2.15"
+  }
 }

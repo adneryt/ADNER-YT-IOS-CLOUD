@@ -1,0 +1,70 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {DatabaseSync} from 'node:sqlite';
+import {readFileSync} from 'node:fs';
+import {generateKeyPair,SignJWT,createLocalJWKSet,exportJWK} from 'jose';
+import {createFirebaseVerifier} from '../src/firebase-auth.js';
+import {createHandler} from '../src/index.js';
+import {digest} from '../src/license-api.js';
+function database(){
+ const sql=new DatabaseSync(':memory:');sql.exec(readFileSync(new URL('../migrations/0001_licenses.sql',import.meta.url),'utf8'));
+ const statement=(query,args=[])=>({bind(...values){return statement(query,values)},async first(){return sql.prepare(query).get(...args)||null},async all(){return {results:sql.prepare(query).all(...args)}},async run(){const x=sql.prepare(query).run(...args);return {meta:{changes:Number(x.changes)}}},query,args});
+ return {prepare:statement,async batch(list){sql.exec('BEGIN');try{const out=[];for(const x of list)out.push(await x.run());sql.exec('COMMIT');return out}catch(e){sql.exec('ROLLBACK');throw e}},sql};
+}
+const uid='OxWCNpO2vRQT0ejIRPFmjU5Ygit2',project='adner-yt-ios-cloud';
+test('Firebase signature, project, UID and required expiry are enforced',async()=>{
+ const pair=await generateKeyPair('RS256'),jwk=await exportJWK(pair.publicKey);jwk.kid='test-key';
+ const verify=createFirebaseVerifier(createLocalJWKSet({keys:[jwk]}));
+ const now=Math.floor(Date.now()/1000),claims={sub:uid,aud:project,iss:'https://securetoken.google.com/'+project,iat:now,exp:now+300,auth_time:now};
+ const token=c=>new SignJWT(c).setProtectedHeader({alg:'RS256',kid:'test-key'}).sign(pair.privateKey);
+ assert.equal(await verify(await token(claims)),true);
+ for(const patch of [{sub:'another-user'},{aud:'another-project'},{iss:'https://evil.test'},{exp:now-1},{auth_time:now+60}])assert.equal(await verify(await token({...claims,...patch})),false);
+ for(const field of ['exp','iat','auth_time']){const missing={...claims};delete missing[field];assert.equal(await verify(await token(missing)),false);}
+ assert.equal(await verify('invalid'),false);
+});
+test('CORS and admin authentication reject before database mutation',async()=>{
+ const DB=database(),handler=createHandler(async()=>false),env={DB};
+ for(const [headers,status]of [[{Origin:'https://evil.test'},403],[{},401]]){const r=await handler.fetch(new Request('https://test/admin/licenses',{method:'POST',headers,body:'{}'}),env);assert.equal(r.status,status)}
+ assert.equal(DB.sql.prepare('SELECT COUNT(*) AS n FROM licenses').get().n,0);
+ const r=await handler.fetch(new Request('https://test/admin/licenses',{method:'OPTIONS',headers:{Origin:'https://adneryt.github.io','Access-Control-Request-Method':'POST','Access-Control-Request-Headers':'authorization,content-type'}}),env);
+ assert.equal(r.status,204);assert.equal(r.headers.get('Access-Control-Allow-Origin'),'https://adneryt.github.io');DB.sql.close();
+});
+test('D1 schema lifecycle: bulk, signed activation, caps, pause/resume, reset and revoke',async()=>{
+ const DB=database(),handler=createHandler(async token=>token==='test-admin'),env={DB};
+ async function request(path,method='GET',data,admin=true){return handler.fetch(new Request('https://test'+path,{method,headers:{...(admin?{Authorization:'Bearer test-admin'}:{}),'Content-Type':'application/json'},...(data?{body:JSON.stringify(data)}:{})}),env)}
+ const created=await request('/admin/licenses','POST',{label:'TEST',hours:24,maxDevices:1,startMode:'first-use',count:2});assert.equal(created.status,201);
+ const records=(await created.json()).licenses;assert.equal(records.length,2);const {id,key}=records[0];
+ assert.equal(DB.sql.prepare('SELECT expires_at FROM licenses WHERE id=?').get(id).expires_at,null);
+ const pair=await crypto.subtle.generateKey('Ed25519',true,['sign','verify']);
+ async function proof(pair){const publicKey=Buffer.from(await crypto.subtle.exportKey('raw',pair.publicKey)).toString('base64'),timestamp=Date.now();const signature=Buffer.from(await crypto.subtle.sign('Ed25519',pair.privateKey,new TextEncoder().encode(await digest(key)+'|'+publicKey+'|'+timestamp))).toString('base64');return {key,publicKey,timestamp,signature};}
+ const check=async p=>request('/v1/license/check','POST',await proof(p),false);
+ let r=await check(pair);assert.equal(r.status,200);const lease=await r.json();assert.equal(lease.allowed,true);assert.ok(lease.validForSeconds<=60);
+ assert.equal((await check(pair)).status,200);
+ const other=await crypto.subtle.generateKey('Ed25519',true,['sign','verify']);assert.equal((await check(other)).status,403);
+ assert.equal(DB.sql.prepare('SELECT COUNT(*) AS n FROM license_devices WHERE license_id=?').get(id).n,1);
+ assert.equal((await request('/admin/licenses/'+id+'/pause','POST',{})).status,200);assert.equal((await check(pair)).status,403);
+ DB.sql.prepare('UPDATE licenses SET paused_at=paused_at-60000 WHERE id=?').run(id);
+ assert.equal((await request('/admin/licenses/'+id+'/resume','POST',{})).status,200);assert.equal((await check(pair)).status,200);
+ assert.ok(DB.sql.prepare('SELECT expires_at FROM licenses WHERE id=?').get(id).expires_at>=lease.expiresAt+60000);
+ assert.equal((await request('/admin/licenses/'+id+'/reset-devices','POST',{})).status,200);assert.equal((await check(other)).status,200);
+ assert.equal((await request('/admin/licenses/'+id+'/revoke','POST',{})).status,200);assert.equal((await check(other)).status,403);
+ const history=await (await request('/admin/licenses/'+id+'/history')).json();assert.ok(history.history.some(x=>x.action==='pause'));
+ const list=await (await request('/admin/licenses')).json();assert.equal(list.licenses.length,2);assert.equal(JSON.stringify(list).includes(key),false);
+ DB.sql.close();
+});
+test('invalid input and forged proofs cannot create or activate licenses; unlimited and expiry work',async()=>{
+ const DB=database(),handler=createHandler(async t=>t==='test-admin'),env={DB};
+ const call=(path,data,admin=true)=>handler.fetch(new Request('https://test'+path,{method:'POST',headers:{'Content-Type':'application/json',...(admin?{Authorization:'Bearer test-admin'}:{})},body:JSON.stringify(data)}),env);
+ for(const data of [null,[],{label:'x',hours:0,maxDevices:1,startMode:'activation'},{label:'x',hours:24,maxDevices:1,startMode:'activation',count:26}])assert.equal((await call('/admin/licenses',data)).status,400);
+ const result=await (await call('/admin/licenses',{label:'Unlimited',hours:24,maxDevices:0,startMode:'creation'})).json();
+ for(let i=0;i<2;i++){
+  const pair=await crypto.subtle.generateKey('Ed25519',true,['sign','verify']),publicKey=Buffer.from(await crypto.subtle.exportKey('raw',pair.publicKey)).toString('base64'),timestamp=Date.now();
+  const signature=Buffer.from(await crypto.subtle.sign('Ed25519',pair.privateKey,new TextEncoder().encode(await digest(result.key)+'|'+publicKey+'|'+timestamp))).toString('base64');
+  const proof={key:result.key,publicKey,timestamp,signature};
+  assert.equal((await call('/v1/license/check',{...proof,timestamp:timestamp+1},false)).status,403);
+  assert.equal((await call('/v1/license/check',proof,false)).status,200);
+  if(i===1){DB.sql.prepare('UPDATE licenses SET expires_at=? WHERE id=?').run(Date.now()-1,result.id);assert.equal((await call('/v1/license/check',proof,false)).status,403);}
+ }
+ assert.equal(DB.sql.prepare('SELECT COUNT(*) AS n FROM license_devices').get().n,2);DB.sql.close();
+});
+

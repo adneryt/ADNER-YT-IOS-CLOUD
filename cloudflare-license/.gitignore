@@ -10,3 +10,5 @@ package.backup.json
 .adner-test-key.txt
 src/index.health.backup.js
 *.log
+
+src/*.backup.js

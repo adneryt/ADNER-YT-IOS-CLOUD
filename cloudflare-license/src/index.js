@@ -1,122 +1,35 @@
-const json=(data,status=200)=>new Response(JSON.stringify(data),{
- status,
- headers:{
-  "Content-Type":"application/json; charset=utf-8",
-  "Cache-Control":"no-store",
-  "X-Content-Type-Options":"nosniff"
- }
-});
-
-const digest=async value=>{
- const bytes=new TextEncoder().encode(value);
- const hash=await crypto.subtle.digest("SHA-256",bytes);
- return [...new Uint8Array(hash)]
-  .map(x=>x.toString(16).padStart(2,"0")).join("");
-};
-
-const randomKey=()=>{
- const bytes=crypto.getRandomValues(new Uint8Array(24));
- return "ADNER-"+[...bytes]
-  .map(x=>x.toString(16).padStart(2,"0"))
-  .join("").toUpperCase();
-};
-
-async function authorized(request,env){
- const token=request.headers.get("Authorization")||"";
- if(!env.ADMIN_SECRET||!token.startsWith("Bearer "))return false;
- const value=token.slice(7);
- if(value.length!==env.ADMIN_SECRET.length)return false;
- const a=await digest(value),b=await digest(env.ADMIN_SECRET);
- return a===b;
+import {verifyFirebaseAdmin} from './firebase-auth.js';
+import {digest,adminRoutes,licenseCheck,errorResponse} from './license-api.js';
+const json=(data,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
+export function createHandler(verifyAdmin=verifyFirebaseAdmin){
+ return {async fetch(request,env){
+  const origin=request.headers.get('Origin');
+  const allowed=new Set(['https://adneryt.github.io']);
+  if(env.ALLOW_LOCAL_ORIGINS==='true')for(const port of [8765,8766,8789])for(const host of ['localhost','127.0.0.1'])allowed.add('http://'+host+':'+port);
+  const cors=response=>{if(!origin)return response;const headers=new Headers(response.headers);headers.set('Access-Control-Allow-Origin',origin);headers.set('Vary','Origin');return new Response(response.body,{status:response.status,headers});};
+  if(origin&&!allowed.has(origin))return json({error:'Origen no autorizado'},403);
+  if(request.method==='OPTIONS'){
+   const method=request.headers.get('Access-Control-Request-Method');
+   const headers=(request.headers.get('Access-Control-Request-Headers')||'').toLowerCase().split(',').map(x=>x.trim()).filter(Boolean);
+   if(!origin||!['GET','POST'].includes(method)||headers.some(x=>!['authorization','content-type'].includes(x)))return cors(json({error:'Preflight no permitido'},403));
+   return cors(new Response(null,{status:204,headers:{'Access-Control-Allow-Methods':'GET, POST, OPTIONS','Access-Control-Allow-Headers':'Authorization, Content-Type','Access-Control-Max-Age':'600'}}));
+  }
+  try{
+   const path=new URL(request.url).pathname;
+   if(path==='/health'&&request.method==='GET'){
+    await env.DB.prepare('SELECT COUNT(*) AS total FROM licenses').first();
+    return cors(json({ok:true,service:'ADNER YT IOS LICENSE',database:'connected',firebaseAuth:true}));
+   }
+   if(path==='/v1/license/check'&&request.method==='POST')return cors(await licenseCheck(request,env));
+   if(!path.startsWith('/admin/'))return cors(json({error:'Ruta no disponible'},404));
+   const header=request.headers.get('Authorization')||'',token=header.startsWith('Bearer ')?header.slice(7):'';
+   let authorized=false;
+   // ADMIN_SECRET is server-only, retained for existing local tooling. Never send it to the web app.
+   if(token&&token.length<=10000&&env.ADMIN_SECRET&&token.length===env.ADMIN_SECRET.length)authorized=await digest(token)===await digest(env.ADMIN_SECRET);
+   if(!authorized)authorized=await verifyAdmin(token);
+   if(!authorized)return cors(json({error:'Sesion Firebase no autorizada. Inicia sesion con el administrador configurado.'},401));
+   return cors(await adminRoutes(request,env,path));
+  }catch(error){return cors(errorResponse(error));}
+ }};
 }
-
-export default {
- async fetch(request,env){
-  const url=new URL(request.url);
-
-  if(url.pathname==="/health"&&request.method==="GET"){
-   try{
-    const result=await env.DB.prepare(
-     "SELECT COUNT(*) AS total FROM licenses"
-    ).first();
-    return json({
-     ok:true,
-     service:"ADNER YT IOS LICENSE",
-     database:"connected",
-     licenseCount:result.total
-    });
-   }catch{
-    return json({ok:false,database:"unavailable"},503);
-   }
-  }
-
-  if(!url.pathname.startsWith("/admin/"))
-   return json({error:"Ruta no disponible"},404);
-
-  if(!await authorized(request,env))
-   return json({error:"No autorizado"},401);
-
-  if(url.pathname==="/admin/licenses"&&request.method==="GET"){
-   const result=await env.DB.prepare(
-    `SELECT id,label,created_at,activated_at,
-      expires_at,duration_seconds,max_devices,status
-     FROM licenses ORDER BY created_at DESC LIMIT 200`
-   ).all();
-   return json({ok:true,licenses:result.results});
-  }
-
-  if(url.pathname==="/admin/licenses"&&request.method==="POST"){
-   let data;
-   try{data=await request.json()}catch{
-    return json({error:"JSON invalido"},400);
-   }
-
-   const hours=Number(data.hours);
-   const maxDevices=Number(data.maxDevices);
-   const mode=data.startMode;
-
-   if(!Number.isInteger(hours)||hours<1||hours>8760)
-    return json({error:"Duracion invalida"},400);
-
-   if(!Number.isInteger(maxDevices)||maxDevices<0||maxDevices>100)
-    return json({error:"Limite de dispositivos invalido"},400);
-
-   if(!["creation","activation"].includes(mode))
-    return json({error:"Modo de inicio invalido"},400);
-
-   if(typeof data.label!=="string"||data.label.length>80)
-    return json({error:"Nombre invalido"},400);
-
-   const key=randomKey();
-   const id=await digest(key);
-   const now=Date.now();
-   const seconds=hours*3600;
-   const expires=mode==="creation"?now+seconds*1000:null;
-
-   await env.DB.prepare(
-    `INSERT INTO licenses
-     (id,label,created_at,duration_seconds,
-      start_mode,expires_at,max_devices,status)
-     VALUES (?,?,?,?,?,?,?,'active')`
-   ).bind(
-    id,data.label||"Licencia ADNER",now,seconds,
-    mode,expires,maxDevices
-   ).run();
-
-   await env.DB.prepare(
-    `INSERT INTO license_history
-     (license_id,action,created_at,details)
-     VALUES (?,'created',?,?)`
-   ).bind(id,now,"Creada desde administrador").run();
-
-   return json({
-    ok:true,
-    key,
-    id,
-    message:"Guarda la key: solo se muestra al crearla."
-   },201);
-  }
-
-  return json({error:"Operacion no disponible"},404);
- }
-};
+export default createHandler();
