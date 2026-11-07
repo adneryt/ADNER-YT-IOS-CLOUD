@@ -2,6 +2,10 @@
 
 This branch prepares Cloudflare D1 licenses without deploying Firebase Functions.
 Production remains disabled in `WEB-ADMIN/license-service-config.json` and in the IPA.
+
+Verified locally on 2026-11-07: the user signed into the actual local web admin;
+Worker logs confirmed GET /admin/session 200, POST /admin/licenses 201 and
+GET /admin/licenses 200. No ID tokens or generated keys are included in this report.
 No Worker has been deployed by this change. Authentication seen in the published
 admin confirms its web login, not acceptance of its token by this Worker.
 
@@ -76,8 +80,8 @@ not implemented by this Worker; advanced GitHub uploads are retained.
 
 ## Pending before release
 
-1. Log in on the local admin and click 'Comprobar sesion Cloudflare'. Record only
-   success/failure, never the ID token. Published-site login alone is not this test.
+1. Local Firebase-session validation and key creation/listing are verified. Repeat
+   after deployment on the final HTTPS origin; never record ID tokens or keys.
 2. Test a real new key locally, then pause/revoke/expiry and restore conflicts on
    the actual iPhone. Verify network loss and app suspension behavior.
 3. Review Firebase token revocation handling, rate limits, pagination, and UI

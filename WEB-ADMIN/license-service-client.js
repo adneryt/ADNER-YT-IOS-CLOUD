@@ -1,7 +1,8 @@
 (()=>{'use strict';
  let configuration;
+ async function timeout(promise,milliseconds,message){let timer;try{return await Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error(message)),milliseconds)})])}finally{clearTimeout(timer)}}
  async function base(){
-  if(!configuration)configuration=fetch(new URL('license-service-config.json',document.baseURI),{cache:'no-store'}).then(async r=>{if(!r.ok)throw Error('No se pudo leer la configuracion de licencias');return r.json()});
+  if(!configuration)configuration=timeout(fetch(new URL('license-service-config.json',document.baseURI),{cache:'no-store'}).then(async r=>{if(!r.ok)throw Error('No se pudo leer la configuracion de licencias');return r.json()}),10000,'No responde la configuracion local').catch(e=>{configuration=null;throw e});
   const c=await configuration,local=['localhost','127.0.0.1'].includes(location.hostname),raw=local?c.localBaseUrl:c.enabled?c.baseUrl:'';
   if(!raw)throw Error('Cloudflare preparado; falta desplegar y configurar su URL. La IPA sigue sin bloqueo.');
   const u=new URL(raw);
@@ -10,8 +11,9 @@
  }
  async function request(path,method='GET',data){
   const a=window.ADNERAdminAPI;if(!a?.state.user||a.state.demo)throw Error('Inicia sesion como administrador');
-  const url=await base(),token=await a.state.user.getIdToken();
-  let response;try{response=await fetch(url+path,{method,cache:'no-store',headers:{Authorization:'Bearer '+token,...(data?{'Content-Type':'application/json'}:{})},...(data?{body:JSON.stringify(data)}:{})})}catch{throw Error('No se pudo conectar con Cloudflare. Comprueba el Worker y CORS.');}
+  const url=await base(),token=await timeout(a.state.user.getIdToken(),10000,'Firebase no pudo renovar la sesion. Cierra sesion y vuelve a entrar.');
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
+  let response;try{response=await fetch(url+path,{method,cache:'no-store',signal:controller.signal,headers:{Authorization:'Bearer '+token,...(data?{'Content-Type':'application/json'}:{})},...(data?{body:JSON.stringify(data)}:{})})}catch{throw Error('No se pudo conectar con Cloudflare. Comprueba el Worker y CORS.');}finally{clearTimeout(timer)}
   let r;try{r=await response.json()}catch{throw Error('Respuesta del servicio no valida');}
   if(!response.ok)throw Error(r.error||r.message||'Operacion rechazada');return r;
  }
