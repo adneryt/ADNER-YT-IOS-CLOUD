@@ -29,6 +29,17 @@ test('CORS and admin authentication reject before database mutation',async()=>{
  const r=await handler.fetch(new Request('https://test/admin/licenses',{method:'OPTIONS',headers:{Origin:'https://adneryt.github.io','Access-Control-Request-Method':'POST','Access-Control-Request-Headers':'authorization,content-type'}}),env);
  assert.equal(r.status,204);assert.equal(r.headers.get('Access-Control-Allow-Origin'),'https://adneryt.github.io');DB.sql.close();
 });
+test('production ignores local secret, forbids local origins and enforces request limiter',async()=>{
+ const DB=database(),handler=createHandler(async()=>false),secret='test-only-secret',limiter={limit:async()=>({success:true})};
+ const r=()=>new Request('https://test/admin/session',{headers:{Authorization:'Bearer '+secret}});
+ assert.equal((await handler.fetch(r(),{DB,ADMIN_SECRET:secret,DEPLOYMENT_ENV:'production',REQUEST_LIMITER:limiter})).status,401);
+ assert.equal((await handler.fetch(r(),{DB,ADMIN_SECRET:secret,ALLOW_LOCAL_ORIGINS:'true'})).status,200);
+ assert.equal((await handler.fetch(r(),{DB,DEPLOYMENT_ENV:'production'})).status,503);
+ assert.equal((await handler.fetch(r(),{DB,DEPLOYMENT_ENV:'production',REQUEST_LIMITER:{limit:async()=>({success:false})}})).status,429);
+ const origin=new Request('https://test/admin/session',{headers:{Origin:'http://localhost:8766'}});
+ assert.equal((await handler.fetch(origin,{DB,DEPLOYMENT_ENV:'production',REQUEST_LIMITER:limiter})).status,403);
+ DB.sql.close();
+});
 test('D1 schema lifecycle: bulk, signed activation, caps, pause/resume, reset and revoke',async()=>{
  const DB=database(),handler=createHandler(async token=>token==='test-admin'),env={DB};
  async function request(path,method='GET',data,admin=true){return handler.fetch(new Request('https://test'+path,{method,headers:{...(admin?{Authorization:'Bearer test-admin'}:{}),'Content-Type':'application/json'},...(data?{body:JSON.stringify(data)}:{})}),env)}

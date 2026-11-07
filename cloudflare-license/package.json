@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "node --test test/*.test.js",
-    "dev": "wrangler dev --port 8789 --var ALLOW_LOCAL_ORIGINS:true",
+    "dev": "wrangler dev --port 8790 --var DEPLOYMENT_ENV:local --var ALLOW_LOCAL_ORIGINS:true --persist-to .wrangler/isolated-integration",
     "check": "wrangler deploy --dry-run"
   },
   "keywords": [],

@@ -1,12 +1,28 @@
-﻿{
-    "main":  "src/index.js",
-    "d1_databases":  [
-                         {
-                             "database_name":  "adner-yt-ios-licenses",
-                             "database_id":  "b7ac5409-93af-42d1-bf18-36f30f51c547",
-                             "binding":  "DB"
-                         }
-                     ],
-    "name":  "adner-yt-ios-license",
-    "compatibility_date":  "2026-11-06"
+{
+  "main": "src/index.js",
+  "d1_databases": [
+    {
+      "database_name": "adner-yt-ios-licenses",
+      "database_id": "b7ac5409-93af-42d1-bf18-36f30f51c547",
+      "binding": "DB"
+    }
+  ],
+  "name": "adner-yt-ios-license",
+  "compatibility_date": "2026-11-06",
+  "workers_dev": true,
+  "preview_urls": false,
+  "vars": {
+    "DEPLOYMENT_ENV": "production",
+    "ALLOW_LOCAL_ORIGINS": "false"
+  },
+  "ratelimits": [
+    {
+      "name": "REQUEST_LIMITER",
+      "namespace_id": "1794305115",
+      "simple": {
+        "limit": 120,
+        "period": 60
+      }
+    }
+  ]
 }
