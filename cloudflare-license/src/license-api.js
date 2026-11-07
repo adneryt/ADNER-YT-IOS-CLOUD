@@ -36,9 +36,24 @@ export async function adminRoutes(request,env,path){
   await db.batch(statements);
   return reply({ok:true,...(count===1?licenses[0]:{}),licenses,message:'Copia las claves ahora; no se recuperan despues.'},201);
  }
- const match=path.match(/^\/admin\/licenses\/([a-f0-9]{64})(?:\/(pause|resume|revoke|reset-devices|history))?$/);
+ const match=path.match(/^\/admin\/licenses\/([a-f0-9]{64})(?:\/(pause|resume|revoke|reset-devices|history|delete))?$/);
  if(!match)return reply({error:'Operacion no disponible'},404);
  const [,id,action]=match;if(!idOK(id))fail('ID invalido');
+ if(action==='delete'&&request.method==='POST'){
+  const d=await body(request);
+  if(d.confirm!=='ELIMINAR'||d.licenseId!==id)fail('Confirmacion de eliminacion invalida',400);
+  const existing=await db.prepare('SELECT id,label,status FROM licenses WHERE id=?').bind(id).first();
+  if(!existing)fail('Licencia inexistente',404);
+  // D1 batch is atomic; deletion audit lives outside the deleted license's FK tree.
+  const result=await db.batch([
+   db.prepare('INSERT INTO license_deletion_audit(license_id,label,status,deleted_at,actor) VALUES(?,?,?,?,?)').bind(id,existing.label,existing.status,now,'firebase-admin'),
+   db.prepare('DELETE FROM license_devices WHERE license_id=?').bind(id),
+   db.prepare('DELETE FROM license_history WHERE license_id=?').bind(id),
+   db.prepare('DELETE FROM licenses WHERE id=?').bind(id)
+  ]);
+  if(result[3].meta.changes!==1)fail('No se completo la eliminacion',409);
+  return reply({ok:true,deleted:true});
+ }
  if(action==='history'&&request.method==='GET'){
   const rows=await db.prepare('SELECT action,created_at,details FROM license_history WHERE license_id=? ORDER BY id DESC LIMIT 200').bind(id).all();return reply({ok:true,history:rows.results});
  }

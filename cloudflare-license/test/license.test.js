@@ -7,7 +7,7 @@ import {createFirebaseVerifier} from '../src/firebase-auth.js';
 import {createHandler} from '../src/index.js';
 import {digest} from '../src/license-api.js';
 function database(){
- const sql=new DatabaseSync(':memory:');sql.exec(readFileSync(new URL('../migrations/0001_licenses.sql',import.meta.url),'utf8'));
+ const sql=new DatabaseSync(':memory:');sql.exec(readFileSync(new URL('../migrations/0001_licenses.sql',import.meta.url),'utf8'));sql.exec(readFileSync(new URL('../migrations/0002_license_deletion_audit.sql',import.meta.url),'utf8'));
  const statement=(query,args=[])=>({bind(...values){return statement(query,values)},async first(){return sql.prepare(query).get(...args)||null},async all(){return {results:sql.prepare(query).all(...args)}},async run(){const x=sql.prepare(query).run(...args);return {meta:{changes:Number(x.changes)}}},query,args});
  return {prepare:statement,async batch(list){sql.exec('BEGIN');try{const out=[];for(const x of list)out.push(await x.run());sql.exec('COMMIT');return out}catch(e){sql.exec('ROLLBACK');throw e}},sql};
 }
@@ -77,4 +77,23 @@ test('invalid input and forged proofs cannot create or activate licenses; unlimi
   if(i===1){DB.sql.prepare('UPDATE licenses SET expires_at=? WHERE id=?').run(Date.now()-1,result.id);assert.equal((await call('/v1/license/check',proof,false)).status,403);}
  }
  assert.equal(DB.sql.prepare('SELECT COUNT(*) AS n FROM license_devices').get().n,2);DB.sql.close();
+});
+
+test('permanent deletion requires admin and explicit confirmation, is atomic, and preserves separate audit',async()=>{
+ const DB=database(),handler=createHandler(async t=>t==='test-admin'),env={DB};
+ const request=(path,method='GET',data,auth=true)=>handler.fetch(new Request('https://test'+path,{method,headers:{...(auth?{Authorization:'Bearer test-admin'}:{}),'Content-Type':'application/json'},...(data?{body:JSON.stringify(data)}:{})}),env);
+ const a=await (await request('/admin/licenses','POST',{label:'DELETE ME',hours:24,maxDevices:1,startMode:'activation'})).json();
+ const b=await (await request('/admin/licenses','POST',{label:'KEEP ME',hours:24,maxDevices:1,startMode:'activation'})).json();
+ const path='/admin/licenses/'+a.id+'/delete';
+ assert.equal((await request(path,'POST',{confirm:'ELIMINAR',licenseId:a.id},false)).status,401);
+ assert.equal((await request(path,'POST',{confirm:'NO',licenseId:a.id})).status,400);
+ assert.equal((await request(path,'POST',{confirm:'ELIMINAR',licenseId:b.id})).status,400);
+ assert.equal(DB.sql.prepare('SELECT COUNT(*) AS n FROM licenses').get().n,2);
+ assert.equal((await request(path,'POST',{confirm:'ELIMINAR',licenseId:a.id})).status,200);
+ assert.equal(DB.sql.prepare('SELECT COUNT(*) AS n FROM licenses').get().n,1);
+ assert.equal(DB.sql.prepare('SELECT label FROM licenses').get().label,'KEEP ME');
+ assert.equal(DB.sql.prepare('SELECT COUNT(*) AS n FROM license_history WHERE license_id=?').get(a.id).n,0);
+ assert.equal(DB.sql.prepare('SELECT COUNT(*) AS n FROM license_deletion_audit WHERE license_id=?').get(a.id).n,1);
+ assert.equal((await request(path,'POST',{confirm:'ELIMINAR',licenseId:a.id})).status,404);
+ DB.sql.close();
 });
